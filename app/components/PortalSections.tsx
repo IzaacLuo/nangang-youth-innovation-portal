@@ -76,6 +76,18 @@ const resourceShortcuts = [
     type: 'Google Sheets',
     href: 'https://docs.google.com/spreadsheets/d/1WuoUipLJK6iEVdCIeOcmdCcbQu_74j7tvu2yD0Xqoso/edit?usp=drive_link',
   },
+  {
+    label: '《NJ南港機廠經費資材清單》',
+    description: '登錄各計畫的經費資材；填寫時請搭配公共資材管理原則。',
+    type: 'Google Sheets',
+    href: 'https://docs.google.com/spreadsheets/d/1V-7o7WK2ASvI411djwh66fV6lHpa4X7C/edit?gid=1886939676#gid=1886939676',
+  },
+  {
+    label: '《公共資材管理原則（草案）》',
+    description: '資材清單的填寫方法、使用規範與管理原則。',
+    type: 'Google Docs',
+    href: 'https://docs.google.com/document/d/1J4Ny_onvCUSXPLKaUVi_Ls5abw7mKZWyYeiaJnVk3QQ/edit?tab=t.0',
+  },
 ];
 
 const postEventChecklist = [
