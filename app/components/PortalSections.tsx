@@ -33,6 +33,31 @@ const sheetLetters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'
 const designStatusOptions: DesignStatus[] = ['未開始', '不需要', '進行中', '完成'];
 const publicationStatusOptions: PublicationStatus[] = ['未開始', '已排程', '已刊登'];
 
+const resourceShortcuts = [
+  {
+    label: '核銷注意事項',
+    description: '請款與核銷前必讀的處理原則。',
+    type: 'Google Drive',
+    href: 'https://drive.google.com/file/d/1Pbpe9LK2o5ZvK9JHcHl69mx2hdZkJwaS/view',
+  },
+  {
+    label: '第一年核定總表',
+    description: '查詢計畫、場次編號與核定資訊。',
+    type: 'Google Sheets',
+    href: 'https://docs.google.com/spreadsheets/d/1WuoUipLJK6iEVdCIeOcmdCcbQu_74j7tvu2yD0Xqoso/edit?usp=drive_link',
+  },
+];
+
+const postEventChecklist = [
+  { number: '01', title: '簽到表', description: '保留活動參與者的完整簽到紀錄。', links: [] },
+  { number: '02', title: '活動照片', description: '留存可辨識活動內容與參與情形的影像。', links: [] },
+  { number: '03', title: '問卷回饋', description: '完成參與者回饋收集與後續整理。', links: [{ label: '開啟問卷回饋資料夾', href: 'https://drive.google.com/drive/folders/15Rmh_kFR2g-QkyzPtU6pIFIrpVo8Ee0y?usp=drive_link' }] },
+  { number: '04', title: '支出憑證', description: '包含發票、收據與採購明細。', links: [] },
+  { number: '05', title: '收款或收據紀錄', description: '活動若有收費，請完整留存相關紀錄。', links: [{ label: '開啟收款或收據紀錄', href: 'https://docs.google.com/document/d/1AFE4lUiRunsyri17DPlVVOhGeBLsose8/edit?usp=sharing&ouid=111334491920239465575&rtpof=true&sd=true' }] },
+  { number: '06', title: 'B 表成果紀錄', description: '依活動型態填寫場次型或持續型成果表。', links: [{ label: 'B1 表｜場次型活動', href: 'https://forms.gle/dq19qgmQvkhVB6XL7' }, { label: 'B2 表｜持續型活動', href: 'https://forms.gle/eHZ9LEbX4qCL3tqM9' }] },
+  { number: '07', title: '核銷明細', description: '填寫線上請款單，並將核銷憑證上傳至指定資料夾。', links: [{ label: '線上請款單', href: 'https://docs.google.com/spreadsheets/d/1SLrT4FijYD8_6fX_Z46aCQ-ZoVPAvS37OEpaxy-oKDE/edit?usp=drive_link' }, { label: '上傳憑證資料夾', href: 'https://drive.google.com/drive/folders/1POhvrRq9trzU0Wm8-xK5HPcc_Z9UnskX?usp=drive_link' }] },
+];
+
 function pad(value: number) {
   return String(value).padStart(2, '0');
 }
@@ -336,27 +361,51 @@ export default function PortalSections() {
   return (
     <>
       <section className="resources-section" id="resources" aria-labelledby="resources-title">
-        <div className="section-kicker"><span>01</span> 資料彙整區</div>
-        <div className="wide-heading">
-          <div><h2 id="resources-title">執行計畫，<br />先從找對資料開始。</h2></div>
-          <p>資料懶人包與常用連結將持續更新。目前先提供活動圖檔上傳入口，其餘內容待後續補上。</p>
+        <div className="resources-topline">
+          <div className="section-kicker"><span>01</span> 資料彙整區</div>
+          <a className="notion-source" href="https://app.notion.com/p/38d157616966803eabc0f2cffc9c71ad" target="_blank" rel="noreferrer">檢視原始 Notion 頁面 <span aria-hidden="true">↗</span></a>
         </div>
-        <div className="resource-list">
-          <div className="resource-row is-pending">
-            <span className="resource-icon" aria-hidden="true">◌</span>
-            <div><span className="resource-type">計畫懶人包</span><h3>青創計畫執行指引</h3><p>執行流程、重要節點與常見問題。</p></div>
-            <span className="pending-tag">準備中</span>
+        <div className="wide-heading">
+          <div><h2 id="resources-title">從辦活動到核銷，<br />所需資料一次找齊。</h2></div>
+          <p>整合核銷抬頭、核定總表與活動後必留資料。建議於活動前先瀏覽一次，活動結束後再依七項清單逐一確認。</p>
+        </div>
+
+        <div className="resource-overview">
+          <article className="billing-card">
+            <div className="card-label"><span /> 核銷資訊</div>
+            <p>核銷抬頭</p>
+            <h3>共宅一生股份有限公司</h3>
+            <div className="tax-id-row"><span>統一編號</span><strong>52419147</strong></div>
+            <a href={resourceShortcuts[0].href} target="_blank" rel="noreferrer">閱讀核銷注意事項 <span aria-hidden="true">↗</span></a>
+          </article>
+
+          <div className="shortcut-panel">
+            <div className="shortcut-heading"><span>QUICK ACCESS</span><h3>常用入口</h3></div>
+            <div className="shortcut-list">
+              {resourceShortcuts.map((resource, index) => (
+                <a href={resource.href} target="_blank" rel="noreferrer" key={resource.label}>
+                  <span className="shortcut-number">0{index + 1}</span>
+                  <span className="shortcut-copy"><small>{resource.type}</small><strong>{resource.label}</strong><span>{resource.description}</span></span>
+                  <span className="shortcut-arrow" aria-hidden="true">↗</span>
+                </a>
+              ))}
+            </div>
           </div>
-          <div className="resource-row is-pending">
-            <span className="resource-icon" aria-hidden="true">✐</span>
-            <div><span className="resource-type">宣傳工具</span><h3>活動宣傳素材與文案範本</h3><p>宣傳時程、文案格式與建議圖檔尺寸。</p></div>
-            <span className="pending-tag">準備中</span>
-          </div>
-          <a className="resource-row is-active" href="https://reurl.cc/WzadZe" target="_blank" rel="noreferrer">
-            <span className="resource-icon" aria-hidden="true">↑</span>
-            <div><span className="resource-type">圖檔上傳</span><h3>活動圖檔共用資料夾</h3><p>請先將圖檔上傳，再把共享連結貼入活動表單。</p></div>
-            <span className="resource-arrow" aria-hidden="true">↗</span>
-          </a>
+        </div>
+
+        <div className="checklist-heading">
+          <div><span>AFTER THE EVENT</span><h3>社區行動執行提醒</h3><p>活動後必留七件資料</p></div>
+          <div className="checklist-count"><strong>07</strong><span>份必備<br />紀錄</span></div>
+        </div>
+
+        <div className="post-event-list">
+          {postEventChecklist.map((item) => (
+            <article className="checklist-item" key={item.number}>
+              <span className="checklist-number">{item.number}</span>
+              <div className="checklist-copy"><h4>{item.title}</h4><p>{item.description}</p>{item.links.length > 0 && <div className="checklist-links">{item.links.map((link) => <a href={link.href} target="_blank" rel="noreferrer" key={link.label}>{link.label} <span aria-hidden="true">↗</span></a>)}</div>}</div>
+              <span className="checklist-mark" aria-hidden="true">✓</span>
+            </article>
+          ))}
         </div>
       </section>
 

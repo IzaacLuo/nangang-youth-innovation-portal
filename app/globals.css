@@ -81,15 +81,49 @@ nav a:hover { color: var(--orange); }
 .wide-heading p, .workspace-heading p { margin: 0 0 8px; color: var(--muted); font-size: 15px; line-height: 1.85; }
 
 .resources-section { padding: 94px 5vw 110px; background: white; border-top: 1px solid var(--line); }
-.resource-list { border-top: 1px solid var(--line); }
-.resource-row { min-height: 140px; display: grid; grid-template-columns: 64px 1fr auto; align-items: center; gap: 30px; padding: 22px 10px; border-bottom: 1px solid var(--line); transition: background .2s, padding .2s; }
-.resource-row.is-active:hover { background: #f4f8e4; padding-inline: 22px; }
-.resource-icon { width: 54px; height: 54px; display: grid; place-items: center; border-radius: 50%; background: var(--paper); font-size: 24px; }
-.resource-row h3 { margin: 6px 0 3px; font-size: 20px; letter-spacing: -.02em; }
-.resource-row p { margin: 0; color: var(--muted); font-size: 13px; }
-.resource-type { color: var(--orange); font-size: 10px; font-weight: 900; letter-spacing: .13em; }
-.pending-tag { color: #7d8985; background: var(--paper); border-radius: 999px; padding: 8px 13px; font-size: 11px; font-weight: 700; }
-.resource-arrow { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 50%; background: var(--lime); font-size: 18px; }
+.resources-topline { display: flex; justify-content: space-between; align-items: center; gap: 24px; }
+.notion-source { color: var(--muted); font-size: 10px; font-weight: 800; border-bottom: 1px solid var(--line); padding-bottom: 4px; }
+.notion-source span { margin-left: 6px; color: var(--orange); }
+.resource-overview { display: grid; grid-template-columns: minmax(300px,.74fr) minmax(500px,1.26fr); gap: 22px; }
+.billing-card { min-height: 350px; display: flex; flex-direction: column; padding: 32px; border-radius: 26px 26px 86px 26px; background: var(--green); color: white; box-shadow: 12px 14px 0 var(--cream); }
+.card-label { display: flex; align-items: center; gap: 8px; color: var(--lime); font-size: 10px; font-weight: 900; letter-spacing: .13em; }
+.card-label span { width: 7px; height: 7px; border-radius: 50%; background: var(--lime); }
+.billing-card > p { margin: 48px 0 7px; color: rgba(255,255,255,.48); font-size: 11px; }
+.billing-card h3 { max-width: 390px; margin: 0; font-size: clamp(25px,3vw,38px); line-height: 1.3; letter-spacing: -.04em; }
+.tax-id-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-top: 28px; padding: 18px 0; border-top: 1px solid rgba(255,255,255,.16); border-bottom: 1px solid rgba(255,255,255,.16); }
+.tax-id-row span { color: rgba(255,255,255,.5); font-size: 10px; letter-spacing: .1em; }
+.tax-id-row strong { color: var(--lime); font: 900 24px/1 Arial; letter-spacing: .08em; }
+.billing-card > a { display: flex; justify-content: space-between; align-items: center; margin-top: auto; padding-top: 22px; color: white; font-size: 11px; font-weight: 800; }
+.billing-card > a span { color: var(--lime); }
+.shortcut-panel { border: 1px solid var(--line); border-radius: 26px; padding: 28px 30px; background: #fbfaf7; }
+.shortcut-heading { display: flex; align-items: end; justify-content: space-between; gap: 20px; padding-bottom: 22px; border-bottom: 2px solid var(--ink); }
+.shortcut-heading > span, .checklist-heading > div > span { color: var(--orange); font: 900 9px/1 Arial; letter-spacing: .15em; }
+.shortcut-heading h3 { margin: 0; font-size: 25px; letter-spacing: -.03em; }
+.shortcut-list > a { min-height: 116px; display: grid; grid-template-columns: 42px 1fr 42px; align-items: center; gap: 18px; border-bottom: 1px solid var(--line); transition: padding .2s, background .2s; }
+.shortcut-list > a:hover { padding-inline: 12px; background: #f4f8e4; }
+.shortcut-number { color: #9ba6a2; font: 800 11px/1 Arial; }
+.shortcut-copy small, .shortcut-copy strong, .shortcut-copy > span { display: block; }
+.shortcut-copy small { color: var(--orange); font-size: 9px; font-weight: 800; letter-spacing: .08em; }
+.shortcut-copy strong { margin-top: 6px; font-size: 16px; }
+.shortcut-copy > span { margin-top: 5px; color: var(--muted); font-size: 11px; }
+.shortcut-arrow { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 50%; background: var(--cream); font-size: 15px; }
+.checklist-heading { display: flex; justify-content: space-between; align-items: end; gap: 30px; margin: 82px 0 26px; }
+.checklist-heading h3 { margin: 9px 0 4px; font-size: clamp(28px,4vw,44px); letter-spacing: -.04em; }
+.checklist-heading p { margin: 0; color: var(--muted); font-size: 13px; }
+.checklist-count { display: flex; align-items: center; gap: 12px; }
+.checklist-count strong { color: var(--orange); font: 900 54px/.9 Arial; letter-spacing: -.06em; }
+.checklist-count span { color: var(--muted); font-size: 10px; font-weight: 800; line-height: 1.5; }
+.post-event-list { border-top: 1px solid var(--line); }
+.checklist-item { min-height: 126px; display: grid; grid-template-columns: 62px minmax(0,1fr) 42px; align-items: center; gap: 24px; padding: 22px 10px; border-bottom: 1px solid var(--line); transition: background .2s, padding .2s; }
+.checklist-item:hover { padding-inline: 20px; background: #faf9f5; }
+.checklist-number { color: var(--orange); font: 900 12px/1 Arial; }
+.checklist-copy h4 { margin: 0; font-size: 19px; letter-spacing: -.02em; }
+.checklist-copy p { margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.checklist-links { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
+.checklist-links a { border: 1px solid var(--line); border-radius: 999px; padding: 7px 10px; background: white; color: var(--green); font-size: 10px; font-weight: 800; }
+.checklist-links a:hover { border-color: var(--green); background: #edf3df; }
+.checklist-links a span { margin-left: 4px; }
+.checklist-mark { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; background: #edf3df; color: var(--green); font-size: 13px; font-weight: 900; }
 
 .form-section { display: grid; grid-template-columns: minmax(280px,.72fr) minmax(500px,1.28fr); background: var(--green); color: white; }
 .form-intro { padding: 95px 5vw; background: radial-gradient(circle at 10% 65%, rgba(216,238,95,.12), transparent 30%); }
@@ -261,6 +295,8 @@ footer > a { justify-self: end; color: var(--lime); font-size: 11px; font-weight
   .module-grid { grid-template-columns: 1fr; }
   .module-card { min-height: 280px; }
   .wide-heading { grid-template-columns: 1fr; gap: 25px; }
+  .resource-overview { grid-template-columns: 1fr; }
+  .billing-card { min-height: 330px; }
   .form-section { grid-template-columns: 1fr; }
   .form-intro { padding-bottom: 70px; }
   .workspace-heading, .workspace-heading > div:first-child { grid-template-columns: 1fr; }
@@ -290,11 +326,16 @@ footer > a { justify-self: end; color: var(--lime); font-size: 11px; font-weight
   .section-heading { display: block; }
   .section-heading > p { margin-top: 18px; }
   .resources-section, .workspace-section { padding: 72px 20px 80px; }
-  .resource-row { grid-template-columns: 46px 1fr auto; gap: 12px; }
-  .resource-icon { width: 42px; height: 42px; font-size: 18px; }
-  .resource-row h3 { font-size: 16px; }
-  .resource-row p { display: none; }
-  .pending-tag { padding: 7px 9px; font-size: 9px; }
+  .resources-topline { align-items: flex-start; flex-direction: column; gap: 16px; }
+  .resource-overview { display: block; }
+  .billing-card { min-height: 350px; padding: 27px 24px; box-shadow: 8px 10px 0 var(--cream); }
+  .shortcut-panel { margin-top: 24px; padding: 24px 18px; }
+  .shortcut-list > a { grid-template-columns: 30px 1fr 36px; gap: 10px; }
+  .shortcut-copy > span { display: none; }
+  .checklist-heading { align-items: flex-start; flex-direction: column; margin-top: 66px; }
+  .checklist-item { grid-template-columns: 38px minmax(0,1fr); gap: 12px; padding-inline: 4px; }
+  .checklist-mark { display: none; }
+  .checklist-links { align-items: flex-start; flex-direction: column; }
   .form-intro { padding: 72px 20px 58px; }
   .activity-form { padding: 38px 20px 44px; }
   .form-grid { grid-template-columns: 1fr; }
