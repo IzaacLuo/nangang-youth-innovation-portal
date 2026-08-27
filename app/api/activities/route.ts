@@ -1,0 +1,76 @@
+import { createActivity, listActivities, type ActivitySubmissionInput } from '../../../db/activities';
+
+export const dynamic = 'force-dynamic';
+
+const requiredTextFields = [
+  'sessionNumber',
+  'youthProjectName',
+  'activityDate',
+  'publishDate',
+  'promotionCopy',
+  'imageUrl',
+] as const;
+
+function cleanText(value: unknown, maxLength: number) {
+  return typeof value === 'string' ? value.trim().slice(0, maxLength) : '';
+}
+
+function isIsoDate(value: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`));
+}
+
+function isHttpUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' || url.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
+export async function GET() {
+  try {
+    return Response.json({ activities: await listActivities() });
+  } catch (error) {
+    console.error('Unable to list activities', error);
+    return Response.json({ message: '目前無法讀取活動資料，請稍後再試。' }, { status: 500 });
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const contentLength = Number(request.headers.get('content-length') ?? 0);
+    if (contentLength > 100_000) {
+      return Response.json({ message: '送出內容過長，請精簡宣傳文案或備註。' }, { status: 413 });
+    }
+
+    const body = (await request.json()) as Record<string, unknown>;
+    const data: ActivitySubmissionInput = {
+      sessionNumber: cleanText(body.sessionNumber, 80),
+      youthProjectName: cleanText(body.youthProjectName, 120),
+      activityDate: cleanText(body.activityDate, 10),
+      publishDate: cleanText(body.publishDate, 10),
+      promotionCopy: cleanText(body.promotionCopy, 5000),
+      imageUrl: cleanText(body.imageUrl, 1000),
+      needsDesign: body.needsDesign === true,
+      registrationUrl: cleanText(body.registrationUrl, 1000) || null,
+      notes: cleanText(body.notes, 3000) || null,
+    };
+
+    const missing = requiredTextFields.filter((field) => !data[field]);
+    if (missing.length || typeof body.needsDesign !== 'boolean') {
+      return Response.json({ message: '請完成所有必填欄位。' }, { status: 400 });
+    }
+    if (!isIsoDate(data.activityDate) || !isIsoDate(data.publishDate)) {
+      return Response.json({ message: '請填寫有效的日期。' }, { status: 400 });
+    }
+    if (!isHttpUrl(data.imageUrl) || (data.registrationUrl && !isHttpUrl(data.registrationUrl))) {
+      return Response.json({ message: '連結格式不正確，請使用 http 或 https 連結。' }, { status: 400 });
+    }
+
+    return Response.json({ activity: await createActivity(data) }, { status: 201 });
+  } catch (error) {
+    console.error('Unable to create activity', error);
+    return Response.json({ message: '資料送出失敗，請稍後再試。' }, { status: 500 });
+  }
+}
