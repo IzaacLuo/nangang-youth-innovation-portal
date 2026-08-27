@@ -145,6 +145,9 @@ nav a:hover { color: var(--orange); }
 .field b, .form-submit-row b { color: var(--orange); }
 .field em { margin-left: 5px; color: var(--muted); font-size: 10px; font-style: normal; font-weight: 600; }
 .field input:not([type="radio"]), .field textarea { width: 100%; border: 0; outline: 0; padding: 5px 0; background: transparent; color: var(--ink); font: inherit; font-size: 15px; resize: vertical; }
+.field > select { width: 100%; min-height: 38px; border: 0; border-bottom: 1px solid transparent; outline: 0; padding: 5px 28px 5px 0; background: transparent; color: var(--ink); font: inherit; font-size: 14px; text-overflow: ellipsis; }
+.field > select:focus { border-bottom-color: var(--green); }
+.field > select:invalid { color: #8f9a96; }
 .field input::placeholder, .field textarea::placeholder { color: #a1aaa7; }
 .field input:focus:not([type="radio"]), .field textarea:focus { box-shadow: 0 2px 0 var(--green); }
 .field input[type="date"] { min-height: 32px; }

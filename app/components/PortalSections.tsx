@@ -32,6 +32,35 @@ const sheetDisplayHeaders = [...sheetHeaders, '操作'];
 const sheetLetters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N'];
 const designStatusOptions: DesignStatus[] = ['未開始', '不需要', '進行中', '完成'];
 const publicationStatusOptions: PublicationStatus[] = ['未開始', '已排程', '已刊登'];
+const youthProjectStorageKey = 'nangang-portal:youth-project-name';
+const youthProjectOptions = [
+  'NJ01百鄰果客廳 x 社計宅宅',
+  'NJ02食堂學堂幸福滿堂',
+  'NJ03看見南港－文史影像三部曲',
+  'NJ05JOY愛閱讀共讀計畫',
+  'NJ06青年在南港_在地影像and身體敘事',
+  'NJ07《聲聚計畫》-聲聲相聚，共築鄰心計畫書',
+  'NJ09有聲社宅計畫：讓社區能「聽見」',
+  'NJ10心港諮商所：讓每一顆心靠岸',
+  'NJ11社區共好三部曲： 共食・共學・共伴',
+  'NJ12社區共織：以布作療癒打造親子藝文共好生活',
+  'NJ13「一起住吧！共繪一條回家的路」',
+  'NJ14發現南港自然驚喜：居民夜間觀察行動',
+  'NJ15社區健康月月講',
+  'NJ16南港小南生-南港機廠社宅共好計畫',
+  'NJ17光影機廠：青年×攝影×社區×回饋循環',
+  'NJ18用瑜珈共創身心平衡的美好生活',
+  'NJ19桌遊總動員：南港社區親子共學計畫',
+  'NJ21動手奏樂起來!STEAM手作工作坊',
+  'NJ22南港共鳴計畫',
+  'NJ24「不插電」程式邏輯：遊戲設計課',
+  'NJ25故事漂島 Story Islands',
+  'NJ27鄰里雲端便利換計劃 ——讓社區流動起來！',
+  'NJ28ARK_社宅AI方舟計畫',
+  'NJ29早安 共食之間',
+  'NJ32白話法研所',
+  'NJ33攀上連結－社宅引路人計畫',
+];
 
 const resourceShortcuts = [
   {
@@ -124,6 +153,7 @@ export function CurrentDateCard() {
 
 export default function PortalSections() {
   const [activities, setActivities] = useState<Activity[]>([]);
+  const [selectedYouthProjectName, setSelectedYouthProjectName] = useState('');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [formStatus, setFormStatus] = useState<FormStatus>({ type: 'idle' });
@@ -155,6 +185,15 @@ export default function PortalSections() {
       .catch((error: Error) => active && setLoadError(error.message))
       .finally(() => active && setLoading(false));
     return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    try {
+      const storedProject = window.localStorage.getItem(youthProjectStorageKey);
+      if (storedProject && youthProjectOptions.includes(storedProject)) setSelectedYouthProjectName(storedProject);
+    } catch {
+      // The select still works if browser storage is disabled.
+    }
   }, []);
 
   const calendarDays = useMemo(() => buildCalendarDays(visibleMonth), [visibleMonth]);
@@ -219,6 +258,15 @@ export default function PortalSections() {
       form.reset();
     } catch (error) {
       setFormStatus({ type: 'error', message: error instanceof Error ? error.message : '資料送出失敗。' });
+    }
+  }
+
+  function handleYouthProjectChange(value: string) {
+    setSelectedYouthProjectName(value);
+    try {
+      window.localStorage.setItem(youthProjectStorageKey, value);
+    } catch {
+      // Keep the current selection even when browser storage is unavailable.
     }
   }
 
@@ -421,7 +469,7 @@ export default function PortalSections() {
           <div className="form-progress"><span>ACTIVITY BRIEF</span><span>01 — 09</span></div>
           <div className="form-grid">
             <label className="field"><span className="field-label-with-link"><span>場次編號 <b>*</b></span><a href="https://docs.google.com/spreadsheets/d/1WuoUipLJK6iEVdCIeOcmdCcbQu_74j7tvu2yD0Xqoso/edit?gid=359503767#gid=359503767" target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>第一年核定總表 ↗</a></span><input name="sessionNumber" required maxLength={80} placeholder="例：NJ001A" /></label>
-            <label className="field"><span>青創名稱 <b>*</b></span><input name="youthProjectName" required maxLength={120} placeholder="請填寫伙伴的計畫名稱" /></label>
+            <label className="field"><span>青創名稱 <b>*</b></span><select name="youthProjectName" required value={selectedYouthProjectName} onChange={(event) => handleYouthProjectChange(event.target.value)}><option value="" disabled>請選擇青創計畫</option>{youthProjectOptions.map((project) => <option value={project} key={project}>{project}</option>)}</select></label>
             <label className="field"><span>活動日期 <b>*</b></span><input type="date" name="activityDate" required /></label>
             <label className="field"><span>上刊日期 <b>*</b></span><input type="date" name="publishDate" required /></label>
             <label className="field full"><span>宣傳文案 <b>*</b></span><textarea name="promotionCopy" required maxLength={5000} rows={6} placeholder="請貼上完整宣傳訊息，包含活動主題、時間、地點與參與方式…" /></label>
