@@ -18,7 +18,7 @@ const modules = [
   {
     number: '03',
     title: '平台組工作區',
-    description: '集中查看伙伴提交的活動，依上刊日期掌握月曆排程。',
+    description: '集中查看伙伴提交的活動，依上刊日期與活動日期掌握月曆排程。',
     href: '#workspace',
     action: '開啟工作區',
   },

@@ -25,6 +25,7 @@ type Activity = {
 type FormStatus = { type: 'idle' | 'sending' | 'success' | 'error'; message?: string };
 type TrackingDraft = Pick<Activity, 'designStatus' | 'publicationStatus' | 'assignee'>;
 type RowSaveStatus = 'saving' | 'saved' | 'error';
+type WorkspaceView = 'publish-calendar' | 'activity-calendar' | 'sheet';
 
 const weekdayLabels = ['日', '一', '二', '三', '四', '五', '六'];
 const sheetHeaders = ['場次編號', '青創名稱', '活動日期', '上刊日期', '宣傳文案', '圖檔連結', '協助設計圖檔', '設計圖稿接案', '發布狀態', '人員', '報名連結', '其他備註', '提交時間'];
@@ -161,12 +162,16 @@ export default function PortalSections() {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1, 12);
   });
+  const [activityVisibleMonth, setActivityVisibleMonth] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1, 12);
+  });
   const [sheetMonth, setSheetMonth] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1, 12);
   });
   const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
-  const [workspaceView, setWorkspaceView] = useState<'calendar' | 'sheet'>('calendar');
+  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>('publish-calendar');
   const [trackingDrafts, setTrackingDrafts] = useState<Record<number, TrackingDraft>>({});
   const [rowSaveStatus, setRowSaveStatus] = useState<Record<number, RowSaveStatus>>({});
   const [rowErrors, setRowErrors] = useState<Record<number, string>>({});
@@ -196,23 +201,27 @@ export default function PortalSections() {
     }
   }, []);
 
-  const calendarDays = useMemo(() => buildCalendarDays(visibleMonth), [visibleMonth]);
+  const isActivityCalendar = workspaceView === 'activity-calendar';
+  const activeCalendarMonth = isActivityCalendar ? activityVisibleMonth : visibleMonth;
+  const activeCalendarDateField: 'activityDate' | 'publishDate' = isActivityCalendar ? 'activityDate' : 'publishDate';
+  const calendarDays = useMemo(() => buildCalendarDays(activeCalendarMonth), [activeCalendarMonth]);
   const activitiesByDate = useMemo(() => {
     const grouped = new Map<string, Activity[]>();
     activities.forEach((activity) => {
-      const dayActivities = grouped.get(activity.publishDate) ?? [];
+      const dateKey = activity[activeCalendarDateField];
+      const dayActivities = grouped.get(dateKey) ?? [];
       dayActivities.push(activity);
-      grouped.set(activity.publishDate, dayActivities);
+      grouped.set(dateKey, dayActivities);
     });
     return grouped;
-  }, [activities]);
+  }, [activities, activeCalendarDateField]);
 
   const monthActivities = useMemo(
     () => activities.filter((activity) => {
-      const date = parseLocalDate(activity.publishDate);
-      return date.getFullYear() === visibleMonth.getFullYear() && date.getMonth() === visibleMonth.getMonth();
+      const date = parseLocalDate(activity[activeCalendarDateField]);
+      return date.getFullYear() === activeCalendarMonth.getFullYear() && date.getMonth() === activeCalendarMonth.getMonth();
     }),
-    [activities, visibleMonth],
+    [activities, activeCalendarDateField, activeCalendarMonth],
   );
 
   const sheetMonthActivities = useMemo(
@@ -250,11 +259,13 @@ export default function PortalSections() {
       if (!response.ok || !data.activity) throw new Error(data.message || '資料送出失敗。');
 
       setActivities((current) => [...current, data.activity!].sort((a, b) => a.publishDate.localeCompare(b.publishDate)));
-      const submittedMonth = new Date(parseLocalDate(data.activity.publishDate).getFullYear(), parseLocalDate(data.activity.publishDate).getMonth(), 1, 12);
-      setVisibleMonth(submittedMonth);
-      setSheetMonth(submittedMonth);
+      const publishMonth = new Date(parseLocalDate(data.activity.publishDate).getFullYear(), parseLocalDate(data.activity.publishDate).getMonth(), 1, 12);
+      const activityMonth = new Date(parseLocalDate(data.activity.activityDate).getFullYear(), parseLocalDate(data.activity.activityDate).getMonth(), 1, 12);
+      setVisibleMonth(publishMonth);
+      setActivityVisibleMonth(activityMonth);
+      setSheetMonth(publishMonth);
       setSelectedActivity(data.activity);
-      setFormStatus({ type: 'success', message: '活動已送出，並自動加入上刊月曆。' });
+      setFormStatus({ type: 'success', message: '活動已送出，並自動加入上刊月曆與活動月曆。' });
       form.reset();
     } catch (error) {
       setFormStatus({ type: 'error', message: error instanceof Error ? error.message : '資料送出失敗。' });
@@ -271,13 +282,16 @@ export default function PortalSections() {
   }
 
   function moveMonth(offset: number) {
-    setVisibleMonth((current) => new Date(current.getFullYear(), current.getMonth() + offset, 1, 12));
+    const setMonth = isActivityCalendar ? setActivityVisibleMonth : setVisibleMonth;
+    setMonth((current) => new Date(current.getFullYear(), current.getMonth() + offset, 1, 12));
     setSelectedActivity(null);
   }
 
   function returnToCurrentMonth() {
     const now = new Date();
-    setVisibleMonth(new Date(now.getFullYear(), now.getMonth(), 1, 12));
+    const currentMonth = new Date(now.getFullYear(), now.getMonth(), 1, 12);
+    if (isActivityCalendar) setActivityVisibleMonth(currentMonth);
+    else setVisibleMonth(currentMonth);
     setSelectedActivity(null);
   }
 
@@ -288,6 +302,11 @@ export default function PortalSections() {
   function returnToCurrentSheetMonth() {
     const now = new Date();
     setSheetMonth(new Date(now.getFullYear(), now.getMonth(), 1, 12));
+  }
+
+  function showCalendar(view: Exclude<WorkspaceView, 'sheet'>) {
+    setWorkspaceView(view);
+    setSelectedActivity(null);
   }
 
   function updateTrackingDraft<K extends keyof TrackingDraft>(activity: Activity, field: K, value: TrackingDraft[K]) {
@@ -461,7 +480,7 @@ export default function PortalSections() {
         <div className="form-intro">
           <div className="section-kicker light"><span>02</span> 內部活動表單</div>
           <h2 id="form-title">填寫活動資訊</h2>
-          <p>表單送出後，資料會即時收錄至平台組工作區，並依「上刊日期」顯示在月曆。</p>
+          <p>表單送出後，資料會即時收錄至平台組工作區，並分別依「上刊日期」與「活動日期」顯示在月曆。</p>
           <div className="form-tip"><span aria-hidden="true">i</span><p><strong>送出前提醒</strong>圖檔請先上傳至共用資料夾，再貼上可存取的連結。</p></div>
         </div>
 
@@ -494,13 +513,14 @@ export default function PortalSections() {
       <section className="workspace-section" id="workspace" aria-labelledby="workspace-title">
         <div className="section-kicker"><span>03</span> 平台組工作區</div>
         <div className="workspace-heading">
-          <div><h2 id="workspace-title">月曆與明細，<br />全部放在同一個工作區。</h2><p>用月曆掌握上刊排程，或切換到資料表逐條檢視伙伴送出的完整內容。</p></div>
-          <div className="workspace-stat"><strong>{workspaceView === 'calendar' ? monthActivities.length : sheetMonthActivities.length}</strong><span>{workspaceView === 'calendar' ? <>{visibleMonth.getMonth() + 1} 月<br />待上刊場次</> : <>{sheetMonth.getMonth() + 1} 月<br />提交筆數</>}</span></div>
+          <div><h2 id="workspace-title">月曆與明細，<br />全部放在同一個工作區。</h2><p>分別用上刊月曆與活動月曆掌握排程，或切換到資料表逐條檢視伙伴送出的完整內容。</p></div>
+          <div className="workspace-stat"><strong>{workspaceView === 'sheet' ? sheetMonthActivities.length : monthActivities.length}</strong><span>{workspaceView === 'sheet' ? <>{sheetMonth.getMonth() + 1} 月<br />提交筆數</> : isActivityCalendar ? <>{activeCalendarMonth.getMonth() + 1} 月<br />活動場次</> : <>{activeCalendarMonth.getMonth() + 1} 月<br />待上刊場次</>}</span></div>
         </div>
 
         <div className="workspace-tabbar">
           <div className="workspace-tabs" role="tablist" aria-label="工作區檢視方式">
-            <button type="button" role="tab" aria-selected={workspaceView === 'calendar'} aria-controls="calendar-panel" className={workspaceView === 'calendar' ? 'active' : ''} onClick={() => setWorkspaceView('calendar')}><span aria-hidden="true">▦</span> 上刊月曆</button>
+            <button type="button" role="tab" aria-selected={workspaceView === 'publish-calendar'} aria-controls="calendar-panel" className={workspaceView === 'publish-calendar' ? 'active' : ''} onClick={() => showCalendar('publish-calendar')}><span aria-hidden="true">▦</span> 上刊月曆</button>
+            <button type="button" role="tab" aria-selected={workspaceView === 'activity-calendar'} aria-controls="calendar-panel" className={workspaceView === 'activity-calendar' ? 'active' : ''} onClick={() => showCalendar('activity-calendar')}><span aria-hidden="true">▦</span> 活動月曆</button>
             <button type="button" role="tab" aria-selected={workspaceView === 'sheet'} aria-controls="sheet-panel" className={workspaceView === 'sheet' ? 'active' : ''} onClick={() => setWorkspaceView('sheet')}><span aria-hidden="true">≣</span> 活動資料表</button>
           </div>
           {workspaceView === 'sheet' && <button className="csv-button" type="button" onClick={exportActivitiesCsv} disabled={!sheetMonthActivities.length}><span aria-hidden="true">↓</span> 輸出本月 CSV</button>}
@@ -508,10 +528,10 @@ export default function PortalSections() {
 
         {loadError && <div className="calendar-error workspace-error" role="alert">{loadError}</div>}
 
-        {workspaceView === 'calendar' ? (
+        {workspaceView !== 'sheet' ? (
           <div className="calendar-shell" id="calendar-panel" role="tabpanel">
             <div className="calendar-toolbar">
-              <div><span className="calendar-label">PUBLICATION CALENDAR</span><h3>{visibleMonth.getFullYear()} <b>/</b> {pad(visibleMonth.getMonth() + 1)}</h3></div>
+              <div><span className="calendar-label">{isActivityCalendar ? 'ACTIVITY CALENDAR' : 'PUBLICATION CALENDAR'}</span><h3>{activeCalendarMonth.getFullYear()} <b>/</b> {pad(activeCalendarMonth.getMonth() + 1)}</h3></div>
               <div className="calendar-controls">
                 <button type="button" onClick={() => moveMonth(-1)} aria-label="上一個月">←</button>
                 <button className="today-button" type="button" onClick={returnToCurrentMonth}>今月</button>
@@ -544,15 +564,15 @@ export default function PortalSections() {
             <div className="calendar-detail" aria-live="polite">
               {selectedActivity ? (
                 <>
-                  <div className="detail-date"><span>上刊</span><strong>{formatDate(selectedActivity.publishDate)}</strong></div>
+                  <div className="detail-date"><span>{isActivityCalendar ? '活動' : '上刊'}</span><strong>{formatDate(selectedActivity[activeCalendarDateField])}</strong></div>
                   <div className="detail-main"><span>{selectedActivity.sessionNumber}</span><h4>{selectedActivity.youthProjectName}</h4><p>{selectedActivity.promotionCopy}</p></div>
-                  <div className="detail-meta"><span>活動日期 <b>{formatDate(selectedActivity.activityDate)}</b></span><span>圖檔設計 <b>{selectedActivity.needsDesign ? '需協助' : '已備妥'}</b></span></div>
+                  <div className="detail-meta"><span>{isActivityCalendar ? '上刊日期' : '活動日期'} <b>{formatDate(isActivityCalendar ? selectedActivity.publishDate : selectedActivity.activityDate)}</b></span><span>圖檔設計 <b>{selectedActivity.needsDesign ? '需協助' : '已備妥'}</b></span></div>
                   <div className="detail-links"><a href={selectedActivity.imageUrl} target="_blank" rel="noreferrer">圖檔 ↗</a>{selectedActivity.registrationUrl && <a href={selectedActivity.registrationUrl} target="_blank" rel="noreferrer">報名頁 ↗</a>}</div>
                 </>
               ) : (
                 <div className="empty-detail">
                   <span aria-hidden="true">{loading ? '…' : '↖'}</span>
-                  <p>{loading ? '正在載入活動資料…' : monthActivities.length ? '點選月曆中的活動，查看上刊摘要。' : '這個月份尚無上刊項目；表單送出後會自動顯示於此。'}</p>
+                  <p>{loading ? '正在載入活動資料…' : monthActivities.length ? `點選月曆中的活動，查看${isActivityCalendar ? '活動' : '上刊'}摘要。` : `這個月份尚無${isActivityCalendar ? '活動場次' : '上刊項目'}；表單送出後會自動顯示於此。`}</p>
                 </div>
               )}
             </div>
@@ -614,7 +634,7 @@ export default function PortalSections() {
             <span className="confirm-icon" aria-hidden="true">!</span>
             <span className="confirm-kicker">IRREVERSIBLE ACTION</span>
             <h3 id="delete-title">確定要刪除這筆活動？</h3>
-            <p id="delete-description">刪除後將<strong>無法復原</strong>，該場次也會從上刊月曆與活動資料表中永久移除。</p>
+            <p id="delete-description">刪除後將<strong>無法復原</strong>，該場次也會從上刊月曆、活動月曆與活動資料表中永久移除。</p>
             <div className="delete-target"><span>{activityPendingDelete.sessionNumber}</span><strong>{activityPendingDelete.youthProjectName}</strong></div>
             {deleteError && <div className="confirm-error" role="alert">{deleteError}</div>}
             <div className="confirm-actions"><button type="button" disabled={deleting} onClick={() => setActivityPendingDelete(null)}>取消</button><button className="confirm-delete" type="button" disabled={deleting} onClick={confirmActivityDeletion}>{deleting ? '刪除中…' : '確定永久刪除'}</button></div>

@@ -177,7 +177,7 @@ nav a:hover { color: var(--orange); }
 .workspace-stat strong { font: 900 62px/.9 Arial; letter-spacing: -.06em; color: var(--orange); }
 .workspace-stat span { color: var(--muted); font-size: 11px; font-weight: 700; line-height: 1.6; }
 .workspace-tabbar { min-height: 68px; display: flex; align-items: center; justify-content: space-between; gap: 22px; padding: 10px 14px; border: 1px solid var(--line); border-bottom: 0; background: #ebe9e0; }
-.workspace-tabs { display: flex; align-items: center; gap: 7px; }
+.workspace-tabs { display: flex; align-items: center; gap: 7px; overflow-x: auto; }
 .workspace-tabs button { cursor: pointer; border: 0; border-radius: 9px; padding: 11px 16px; background: transparent; color: var(--muted); font: inherit; font-size: 12px; font-weight: 800; }
 .workspace-tabs button span { margin-right: 7px; font-size: 15px; }
 .workspace-tabs button.active { background: white; color: var(--ink); box-shadow: 0 3px 12px rgba(23,53,46,.08); }
@@ -350,7 +350,7 @@ footer > a { justify-self: end; color: var(--lime); font-size: 11px; font-weight
   .form-submit-row { align-items: stretch; flex-direction: column; }
   .form-submit-row button { width: 100%; }
   .workspace-heading { margin-bottom: 30px; }
-  .workspace-tabs button { padding-inline: 11px; font-size: 11px; }
+  .workspace-tabs button { flex: 0 0 auto; padding-inline: 11px; font-size: 11px; white-space: nowrap; }
   .csv-button { width: 100%; }
   .calendar-toolbar { padding-inline: 18px; }
   .calendar-detail { grid-template-columns: 1fr; padding: 22px 20px; }
