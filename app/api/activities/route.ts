@@ -1,4 +1,12 @@
-import { createActivity, listActivities, type ActivitySubmissionInput } from '../../../db/activities';
+import {
+  createActivity,
+  deleteActivity,
+  listActivities,
+  updateActivityTracking,
+  type ActivitySubmissionInput,
+  type DesignStatus,
+  type PublicationStatus,
+} from '../../../db/activities';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,6 +18,9 @@ const requiredTextFields = [
   'promotionCopy',
   'imageUrl',
 ] as const;
+
+const designStatuses: DesignStatus[] = ['未開始', '不需要', '進行中', '完成'];
+const publicationStatuses: PublicationStatus[] = ['未開始', '已排程', '已刊登'];
 
 function cleanText(value: unknown, maxLength: number) {
   return typeof value === 'string' ? value.trim().slice(0, maxLength) : '';
@@ -72,5 +83,45 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error('Unable to create activity', error);
     return Response.json({ message: '資料送出失敗，請稍後再試。' }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const body = (await request.json()) as Record<string, unknown>;
+    const id = Number(body.id);
+    const designStatus = cleanText(body.designStatus, 20) as DesignStatus;
+    const publicationStatus = cleanText(body.publicationStatus, 20) as PublicationStatus;
+    const assignee = cleanText(body.assignee, 120);
+
+    if (!Number.isInteger(id) || id <= 0) {
+      return Response.json({ message: '活動編號不正確。' }, { status: 400 });
+    }
+    if (!designStatuses.includes(designStatus) || !publicationStatuses.includes(publicationStatus)) {
+      return Response.json({ message: '工作狀態不在允許的範圍內。' }, { status: 400 });
+    }
+
+    const activity = await updateActivityTracking(id, { designStatus, publicationStatus, assignee });
+    if (!activity) return Response.json({ message: '找不到這筆活動資料。' }, { status: 404 });
+    return Response.json({ activity });
+  } catch (error) {
+    console.error('Unable to update activity', error);
+    return Response.json({ message: '資料儲存失敗，請稍後再試。' }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const id = Number(new URL(request.url).searchParams.get('id'));
+    if (!Number.isInteger(id) || id <= 0) {
+      return Response.json({ message: '活動編號不正確。' }, { status: 400 });
+    }
+
+    const deleted = await deleteActivity(id);
+    if (!deleted) return Response.json({ message: '找不到這筆活動資料。' }, { status: 404 });
+    return Response.json({ deleted: true });
+  } catch (error) {
+    console.error('Unable to delete activity', error);
+    return Response.json({ message: '資料刪除失敗，請稍後再試。' }, { status: 500 });
   }
 }

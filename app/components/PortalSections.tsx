@@ -2,6 +2,9 @@
 
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 
+type DesignStatus = '未開始' | '不需要' | '進行中' | '完成';
+type PublicationStatus = '未開始' | '已排程' | '已刊登';
+
 type Activity = {
   id: number;
   sessionNumber: string;
@@ -13,14 +16,22 @@ type Activity = {
   needsDesign: boolean;
   registrationUrl: string | null;
   notes: string | null;
+  designStatus: DesignStatus;
+  publicationStatus: PublicationStatus;
+  assignee: string;
   createdAt: string;
 };
 
 type FormStatus = { type: 'idle' | 'sending' | 'success' | 'error'; message?: string };
+type TrackingDraft = Pick<Activity, 'designStatus' | 'publicationStatus' | 'assignee'>;
+type RowSaveStatus = 'saving' | 'saved' | 'error';
 
 const weekdayLabels = ['日', '一', '二', '三', '四', '五', '六'];
-const sheetHeaders = ['場次編號', '青創名稱', '活動日期', '上刊日期', '宣傳文案', '圖檔連結', '協助設計圖檔', '報名連結', '其他備註', '提交時間'];
-const sheetLetters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
+const sheetHeaders = ['場次編號', '青創名稱', '活動日期', '上刊日期', '宣傳文案', '圖檔連結', '協助設計圖檔', '設計圖稿接案', '發布狀態', '人員', '報名連結', '其他備註', '提交時間'];
+const sheetDisplayHeaders = [...sheetHeaders, '操作'];
+const sheetLetters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N'];
+const designStatusOptions: DesignStatus[] = ['未開始', '不需要', '進行中', '完成'];
+const publicationStatusOptions: PublicationStatus[] = ['未開始', '已排程', '已刊登'];
 
 function pad(value: number) {
   return String(value).padStart(2, '0');
@@ -95,8 +106,18 @@ export default function PortalSections() {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1, 12);
   });
+  const [sheetMonth, setSheetMonth] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1, 12);
+  });
   const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
   const [workspaceView, setWorkspaceView] = useState<'calendar' | 'sheet'>('calendar');
+  const [trackingDrafts, setTrackingDrafts] = useState<Record<number, TrackingDraft>>({});
+  const [rowSaveStatus, setRowSaveStatus] = useState<Record<number, RowSaveStatus>>({});
+  const [rowErrors, setRowErrors] = useState<Record<number, string>>({});
+  const [activityPendingDelete, setActivityPendingDelete] = useState<Activity | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -130,6 +151,14 @@ export default function PortalSections() {
     [activities, visibleMonth],
   );
 
+  const sheetMonthActivities = useMemo(
+    () => activities.filter((activity) => {
+      const date = parseLocalDate(activity.publishDate);
+      return date.getFullYear() === sheetMonth.getFullYear() && date.getMonth() === sheetMonth.getMonth();
+    }),
+    [activities, sheetMonth],
+  );
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setFormStatus({ type: 'sending' });
@@ -157,7 +186,9 @@ export default function PortalSections() {
       if (!response.ok || !data.activity) throw new Error(data.message || '資料送出失敗。');
 
       setActivities((current) => [...current, data.activity!].sort((a, b) => a.publishDate.localeCompare(b.publishDate)));
-      setVisibleMonth(new Date(parseLocalDate(data.activity.publishDate).getFullYear(), parseLocalDate(data.activity.publishDate).getMonth(), 1, 12));
+      const submittedMonth = new Date(parseLocalDate(data.activity.publishDate).getFullYear(), parseLocalDate(data.activity.publishDate).getMonth(), 1, 12);
+      setVisibleMonth(submittedMonth);
+      setSheetMonth(submittedMonth);
       setSelectedActivity(data.activity);
       setFormStatus({ type: 'success', message: '活動已送出，並自動加入上刊月曆。' });
       form.reset();
@@ -177,8 +208,105 @@ export default function PortalSections() {
     setSelectedActivity(null);
   }
 
+  function moveSheetMonth(offset: number) {
+    setSheetMonth((current) => new Date(current.getFullYear(), current.getMonth() + offset, 1, 12));
+  }
+
+  function returnToCurrentSheetMonth() {
+    const now = new Date();
+    setSheetMonth(new Date(now.getFullYear(), now.getMonth(), 1, 12));
+  }
+
+  function updateTrackingDraft<K extends keyof TrackingDraft>(activity: Activity, field: K, value: TrackingDraft[K]) {
+    setTrackingDrafts((current) => ({
+      ...current,
+      [activity.id]: {
+        designStatus: current[activity.id]?.designStatus ?? activity.designStatus,
+        publicationStatus: current[activity.id]?.publicationStatus ?? activity.publicationStatus,
+        assignee: current[activity.id]?.assignee ?? activity.assignee,
+        [field]: value,
+      },
+    }));
+    setRowSaveStatus((current) => {
+      const next = { ...current };
+      delete next[activity.id];
+      return next;
+    });
+    setRowErrors((current) => {
+      const next = { ...current };
+      delete next[activity.id];
+      return next;
+    });
+  }
+
+  async function saveActivityTracking(activity: Activity, draft: TrackingDraft) {
+    setRowSaveStatus((current) => ({ ...current, [activity.id]: 'saving' }));
+    setRowErrors((current) => ({ ...current, [activity.id]: '' }));
+    try {
+      const response = await fetch('/api/activities', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: activity.id, ...draft }),
+      });
+      const data = (await response.json()) as { activity?: Activity; message?: string };
+      if (!response.ok || !data.activity) throw new Error(data.message || '資料儲存失敗。');
+
+      setActivities((current) => current.map((item) => item.id === activity.id ? data.activity! : item));
+      setTrackingDrafts((current) => {
+        const next = { ...current };
+        delete next[activity.id];
+        return next;
+      });
+      setRowSaveStatus((current) => ({ ...current, [activity.id]: 'saved' }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '資料儲存失敗。';
+      setRowSaveStatus((current) => ({ ...current, [activity.id]: 'error' }));
+      setRowErrors((current) => ({ ...current, [activity.id]: message }));
+    }
+  }
+
+  function requestActivityDeletion(activity: Activity) {
+    setDeleteError('');
+    setActivityPendingDelete(activity);
+  }
+
+  async function confirmActivityDeletion() {
+    if (!activityPendingDelete) return;
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      const response = await fetch(`/api/activities?id=${activityPendingDelete.id}`, { method: 'DELETE' });
+      const data = (await response.json()) as { deleted?: boolean; message?: string };
+      if (!response.ok || !data.deleted) throw new Error(data.message || '資料刪除失敗。');
+
+      const deletedId = activityPendingDelete.id;
+      setActivities((current) => current.filter((activity) => activity.id !== deletedId));
+      setSelectedActivity((current) => current?.id === deletedId ? null : current);
+      setTrackingDrafts((current) => {
+        const next = { ...current };
+        delete next[deletedId];
+        return next;
+      });
+      setRowSaveStatus((current) => {
+        const next = { ...current };
+        delete next[deletedId];
+        return next;
+      });
+      setRowErrors((current) => {
+        const next = { ...current };
+        delete next[deletedId];
+        return next;
+      });
+      setActivityPendingDelete(null);
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : '資料刪除失敗。');
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   function exportActivitiesCsv() {
-    const rows = activities.map((activity) => [
+    const rows = sheetMonthActivities.map((activity) => [
       activity.sessionNumber,
       activity.youthProjectName,
       activity.activityDate,
@@ -186,6 +314,9 @@ export default function PortalSections() {
       activity.promotionCopy,
       activity.imageUrl,
       activity.needsDesign ? '是' : '否',
+      activity.designStatus,
+      activity.publicationStatus,
+      activity.assignee,
       activity.registrationUrl,
       activity.notes,
       formatCreatedAt(activity.createdAt),
@@ -195,7 +326,7 @@ export default function PortalSections() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `青創活動提交資料_${toDateKey(new Date())}.csv`;
+    link.download = `青創活動提交資料_${sheetMonth.getFullYear()}-${pad(sheetMonth.getMonth() + 1)}.csv`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -267,7 +398,7 @@ export default function PortalSections() {
         <div className="section-kicker"><span>03</span> 平台組工作區</div>
         <div className="workspace-heading">
           <div><h2 id="workspace-title">月曆與明細，<br />全部放在同一個工作區。</h2><p>用月曆掌握上刊排程，或切換到資料表逐條檢視伙伴送出的完整內容。</p></div>
-          <div className="workspace-stat"><strong>{workspaceView === 'calendar' ? monthActivities.length : activities.length}</strong><span>{workspaceView === 'calendar' ? <>{visibleMonth.getMonth() + 1} 月<br />待上刊場次</> : <>累積<br />提交筆數</>}</span></div>
+          <div className="workspace-stat"><strong>{workspaceView === 'calendar' ? monthActivities.length : sheetMonthActivities.length}</strong><span>{workspaceView === 'calendar' ? <>{visibleMonth.getMonth() + 1} 月<br />待上刊場次</> : <>{sheetMonth.getMonth() + 1} 月<br />提交筆數</>}</span></div>
         </div>
 
         <div className="workspace-tabbar">
@@ -275,7 +406,7 @@ export default function PortalSections() {
             <button type="button" role="tab" aria-selected={workspaceView === 'calendar'} aria-controls="calendar-panel" className={workspaceView === 'calendar' ? 'active' : ''} onClick={() => setWorkspaceView('calendar')}><span aria-hidden="true">▦</span> 上刊月曆</button>
             <button type="button" role="tab" aria-selected={workspaceView === 'sheet'} aria-controls="sheet-panel" className={workspaceView === 'sheet' ? 'active' : ''} onClick={() => setWorkspaceView('sheet')}><span aria-hidden="true">≣</span> 活動資料表</button>
           </div>
-          {workspaceView === 'sheet' && <button className="csv-button" type="button" onClick={exportActivitiesCsv} disabled={!activities.length}><span aria-hidden="true">↓</span> 輸出 CSV</button>}
+          {workspaceView === 'sheet' && <button className="csv-button" type="button" onClick={exportActivitiesCsv} disabled={!sheetMonthActivities.length}><span aria-hidden="true">↓</span> 輸出本月 CSV</button>}
         </div>
 
         {loadError && <div className="calendar-error workspace-error" role="alert">{loadError}</div>}
@@ -331,38 +462,68 @@ export default function PortalSections() {
           </div>
         ) : (
           <div className="sheet-shell" id="sheet-panel" role="tabpanel">
-            <div className="sheet-toolbar"><div><span className="calendar-label">ACTIVITY SUBMISSIONS</span><h3>活動提交資料</h3></div><span>{loading ? '載入中…' : `共 ${activities.length} 筆`}</span></div>
+            <div className="sheet-toolbar">
+              <div><span className="calendar-label">ACTIVITY SUBMISSIONS · 依上刊月份</span><h3>{sheetMonth.getFullYear()} <b>/</b> {pad(sheetMonth.getMonth() + 1)}</h3></div>
+              <div className="sheet-toolbar-actions"><span>{loading ? '載入中…' : `本月共 ${sheetMonthActivities.length} 筆`}</span><div className="calendar-controls"><button type="button" onClick={() => moveSheetMonth(-1)} aria-label="上一個月">←</button><button className="today-button" type="button" onClick={returnToCurrentSheetMonth}>今月</button><button type="button" onClick={() => moveSheetMonth(1)} aria-label="下一個月">→</button></div></div>
+            </div>
             <div className="sheet-scroll">
               <table className="activity-sheet" aria-busy={loading}>
                 <thead>
                   <tr className="sheet-letters"><th className="sheet-corner" aria-label="列號" />{sheetLetters.map((letter) => <th key={letter}>{letter}</th>)}</tr>
-                  <tr><th className="row-number">#</th>{sheetHeaders.map((header) => <th key={header}>{header}</th>)}</tr>
+                  <tr><th className="row-number">#</th>{sheetDisplayHeaders.map((header) => <th key={header}>{header}</th>)}</tr>
                 </thead>
                 <tbody>
-                  {activities.length ? activities.map((activity, index) => (
-                    <tr key={activity.id}>
-                      <th className="row-number" scope="row">{index + 1}</th>
-                      <td className="sheet-code">{activity.sessionNumber}</td>
-                      <td>{activity.youthProjectName}</td>
-                      <td>{activity.activityDate}</td>
-                      <td>{activity.publishDate}</td>
-                      <td className="sheet-long" title={activity.promotionCopy}>{activity.promotionCopy}</td>
-                      <td><a href={activity.imageUrl} target="_blank" rel="noreferrer">開啟圖檔 ↗</a></td>
-                      <td>{activity.needsDesign ? '是' : '否'}</td>
-                      <td>{activity.registrationUrl ? <a href={activity.registrationUrl} target="_blank" rel="noreferrer">開啟報名頁 ↗</a> : '—'}</td>
-                      <td className="sheet-long" title={activity.notes ?? ''}>{activity.notes || '—'}</td>
-                      <td>{formatCreatedAt(activity.createdAt)}</td>
-                    </tr>
-                  )) : (
-                    <tr><td className="sheet-empty" colSpan={11}>{loading ? '正在載入活動資料…' : '目前尚無提交資料，新表單送出後會立即出現於此。'}</td></tr>
+                  {sheetMonthActivities.length ? sheetMonthActivities.map((activity, index) => {
+                    const draft = trackingDrafts[activity.id] ?? {
+                      designStatus: activity.designStatus,
+                      publicationStatus: activity.publicationStatus,
+                      assignee: activity.assignee,
+                    };
+                    const hasChanges = draft.designStatus !== activity.designStatus || draft.publicationStatus !== activity.publicationStatus || draft.assignee !== activity.assignee;
+                    const saveStatus = rowSaveStatus[activity.id];
+                    return (
+                      <tr key={activity.id}>
+                        <th className="row-number" scope="row">{index + 1}</th>
+                        <td className="sheet-code">{activity.sessionNumber}</td>
+                        <td>{activity.youthProjectName}</td>
+                        <td>{activity.activityDate}</td>
+                        <td>{activity.publishDate}</td>
+                        <td className="sheet-long" title={activity.promotionCopy}>{activity.promotionCopy}</td>
+                        <td><a href={activity.imageUrl} target="_blank" rel="noreferrer">開啟圖檔 ↗</a></td>
+                        <td>{activity.needsDesign ? '是' : '否'}</td>
+                        <td className="sheet-edit-cell"><select aria-label={`${activity.sessionNumber} 設計圖稿接案`} value={draft.designStatus} onChange={(event) => updateTrackingDraft(activity, 'designStatus', event.target.value as DesignStatus)}>{designStatusOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></td>
+                        <td className="sheet-edit-cell"><select aria-label={`${activity.sessionNumber} 發布狀態`} value={draft.publicationStatus} onChange={(event) => updateTrackingDraft(activity, 'publicationStatus', event.target.value as PublicationStatus)}>{publicationStatusOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></td>
+                        <td className="sheet-edit-cell"><input aria-label={`${activity.sessionNumber} 人員`} value={draft.assignee} maxLength={120} placeholder="輸入人員" onChange={(event) => updateTrackingDraft(activity, 'assignee', event.target.value)} /></td>
+                        <td>{activity.registrationUrl ? <a href={activity.registrationUrl} target="_blank" rel="noreferrer">開啟報名頁 ↗</a> : '—'}</td>
+                        <td className="sheet-long" title={activity.notes ?? ''}>{activity.notes || '—'}</td>
+                        <td>{formatCreatedAt(activity.createdAt)}</td>
+                        <td className="sheet-actions-cell"><div className="row-actions"><button className={`row-save ${saveStatus ?? ''}`} type="button" disabled={!hasChanges || saveStatus === 'saving'} onClick={() => saveActivityTracking(activity, draft)}>{saveStatus === 'saving' ? '儲存中…' : saveStatus === 'saved' && !hasChanges ? '已儲存' : saveStatus === 'error' ? '重試儲存' : '儲存'}</button><button className="row-delete" type="button" onClick={() => requestActivityDeletion(activity)}>刪除</button></div>{rowErrors[activity.id] && <small className="row-error" title={rowErrors[activity.id]}>{rowErrors[activity.id]}</small>}</td>
+                      </tr>
+                    );
+                  }) : (
+                    <tr><td className="sheet-empty" colSpan={15}>{loading ? '正在載入活動資料…' : `${sheetMonth.getFullYear()} 年 ${sheetMonth.getMonth() + 1} 月尚無提交資料。`}</td></tr>
                   )}
                 </tbody>
               </table>
             </div>
-            <div className="sheet-footer"><span>最後同步：開啟頁面時</span><span>資料將依上刊日期排序</span></div>
+            <div className="sheet-footer"><span>修改工作狀態或人員後，請點選該列的「儲存」。</span><span>資料依上刊日期按月顯示</span></div>
           </div>
         )}
       </section>
+
+      {activityPendingDelete && (
+        <div className="confirm-backdrop">
+          <div className="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-title" aria-describedby="delete-description">
+            <span className="confirm-icon" aria-hidden="true">!</span>
+            <span className="confirm-kicker">IRREVERSIBLE ACTION</span>
+            <h3 id="delete-title">確定要刪除這筆活動？</h3>
+            <p id="delete-description">刪除後將<strong>無法復原</strong>，該場次也會從上刊月曆與活動資料表中永久移除。</p>
+            <div className="delete-target"><span>{activityPendingDelete.sessionNumber}</span><strong>{activityPendingDelete.youthProjectName}</strong></div>
+            {deleteError && <div className="confirm-error" role="alert">{deleteError}</div>}
+            <div className="confirm-actions"><button type="button" disabled={deleting} onClick={() => setActivityPendingDelete(null)}>取消</button><button className="confirm-delete" type="button" disabled={deleting} onClick={confirmActivityDeletion}>{deleting ? '刪除中…' : '確定永久刪除'}</button></div>
+          </div>
+        </div>
+      )}
 
       <footer>
         <div className="footer-brand"><span className="brand-mark" aria-hidden="true">NG</span><div><strong>台北市南港機廠社宅</strong><span>青年創新回饋計畫入口網</span></div></div>
