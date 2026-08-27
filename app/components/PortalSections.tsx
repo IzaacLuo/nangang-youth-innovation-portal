@@ -412,7 +412,7 @@ export default function PortalSections() {
       <section className="form-section" id="activity-form" aria-labelledby="form-title">
         <div className="form-intro">
           <div className="section-kicker light"><span>02</span> 內部活動表單</div>
-          <h2 id="form-title">把活動資訊<br />一次交清楚。</h2>
+          <h2 id="form-title">填寫活動資訊</h2>
           <p>表單送出後，資料會即時收錄至平台組工作區，並依「上刊日期」顯示在月曆。</p>
           <div className="form-tip"><span aria-hidden="true">i</span><p><strong>送出前提醒</strong>圖檔請先上傳至共用資料夾，再貼上可存取的連結。</p></div>
         </div>
