@@ -1,6 +1,10 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
+
+import ActivityHub from './ActivityHub';
+import type { PublicAccount } from '../lib/client-auth';
+import { buildPublicActivityPath } from '../../lib/slug';
 
 type DesignStatus = '未開始' | '不需要' | '進行中' | '完成';
 type PublicationStatus = '未開始' | '已排程' | '已刊登';
@@ -16,6 +20,8 @@ type Activity = {
   needsDesign: boolean;
   registrationUrl: string | null;
   notes: string | null;
+  slug: string;
+  submittedBy: string;
   designStatus: DesignStatus;
   publicationStatus: PublicationStatus;
   assignee: string;
@@ -23,45 +29,17 @@ type Activity = {
 };
 
 type FormStatus = { type: 'idle' | 'sending' | 'success' | 'error'; message?: string };
+type UploadStatus = { type: 'idle' | 'uploading' | 'success' | 'error'; message?: string };
 type TrackingDraft = Pick<Activity, 'designStatus' | 'publicationStatus' | 'assignee'>;
 type RowSaveStatus = 'saving' | 'saved' | 'error';
 type WorkspaceView = 'publish-calendar' | 'activity-calendar' | 'sheet';
 
 const weekdayLabels = ['日', '一', '二', '三', '四', '五', '六'];
-const sheetHeaders = ['場次編號', '青創名稱', '活動日期', '上刊日期', '宣傳文案', '圖檔連結', '協助設計圖檔', '設計圖稿接案', '發布狀態', '人員', '報名連結', '其他備註', '提交時間'];
+const sheetHeaders = ['場次編號', '青創名稱', '活動日期', '上刊日期', '宣傳文案', '圖檔連結', '協助設計圖檔', '設計圖稿接案', '發布狀態', '人員', '公開報名頁', '其他備註', '提交時間'];
 const sheetDisplayHeaders = [...sheetHeaders, '操作'];
 const sheetLetters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N'];
 const designStatusOptions: DesignStatus[] = ['未開始', '不需要', '進行中', '完成'];
 const publicationStatusOptions: PublicationStatus[] = ['未開始', '已排程', '已刊登'];
-const youthProjectStorageKey = 'nangang-portal:youth-project-name';
-const youthProjectOptions = [
-  'NJ01百鄰果客廳 x 社計宅宅',
-  'NJ02食堂學堂幸福滿堂',
-  'NJ03看見南港－文史影像三部曲',
-  'NJ05JOY愛閱讀共讀計畫',
-  'NJ06青年在南港_在地影像and身體敘事',
-  'NJ07《聲聚計畫》-聲聲相聚，共築鄰心計畫書',
-  'NJ09有聲社宅計畫：讓社區能「聽見」',
-  'NJ10心港諮商所：讓每一顆心靠岸',
-  'NJ11社區共好三部曲： 共食・共學・共伴',
-  'NJ12社區共織：以布作療癒打造親子藝文共好生活',
-  'NJ13「一起住吧！共繪一條回家的路」',
-  'NJ14發現南港自然驚喜：居民夜間觀察行動',
-  'NJ15社區健康月月講',
-  'NJ16南港小南生-南港機廠社宅共好計畫',
-  'NJ17光影機廠：青年×攝影×社區×回饋循環',
-  'NJ18用瑜珈共創身心平衡的美好生活',
-  'NJ19桌遊總動員：南港社區親子共學計畫',
-  'NJ21動手奏樂起來!STEAM手作工作坊',
-  'NJ22南港共鳴計畫',
-  'NJ24「不插電」程式邏輯：遊戲設計課',
-  'NJ25故事漂島 Story Islands',
-  'NJ27鄰里雲端便利換計劃 ——讓社區流動起來！',
-  'NJ28ARK_社宅AI方舟計畫',
-  'NJ29早安 共食之間',
-  'NJ32白話法研所',
-  'NJ33攀上連結－社宅引路人計畫',
-];
 
 const resourceShortcuts = [
   {
@@ -164,12 +142,23 @@ export function CurrentDateCard() {
   );
 }
 
-export default function PortalSections() {
+export default function PortalSections({
+  isAdmin = false,
+  account = null,
+}: {
+  isAdmin?: boolean;
+  account?: PublicAccount | null;
+}) {
   const [activities, setActivities] = useState<Activity[]>([]);
+  const [adminProjectOptions, setAdminProjectOptions] = useState<string[]>([]);
   const [selectedYouthProjectName, setSelectedYouthProjectName] = useState('');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [formStatus, setFormStatus] = useState<FormStatus>({ type: 'idle' });
+  const [uploadStatus, setUploadStatus] = useState<UploadStatus>({ type: 'idle' });
+  const [uploadedImageUrl, setUploadedImageUrl] = useState('');
+  const [imagePreviewUrl, setImagePreviewUrl] = useState('');
+  const [useExternalImageUrl, setUseExternalImageUrl] = useState(false);
   const [visibleMonth, setVisibleMonth] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1, 12);
@@ -190,9 +179,18 @@ export default function PortalSections() {
   const [activityPendingDelete, setActivityPendingDelete] = useState<Activity | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+  const [highlightActivityId, setHighlightActivityId] = useState<number | null>(null);
+  const [hubRefreshKey, setHubRefreshKey] = useState(0);
 
   useEffect(() => {
+    if (!account) {
+      setLoading(false);
+      setActivities([]);
+      return undefined;
+    }
+
     let active = true;
+    setLoading(true);
     fetch('/api/activities', { cache: 'no-store' })
       .then(async (response) => {
         const data = (await response.json()) as { activities?: Activity[]; message?: string };
@@ -202,16 +200,27 @@ export default function PortalSections() {
       .catch((error: Error) => active && setLoadError(error.message))
       .finally(() => active && setLoading(false));
     return () => { active = false; };
-  }, []);
+  }, [account]);
 
   useEffect(() => {
-    try {
-      const storedProject = window.localStorage.getItem(youthProjectStorageKey);
-      if (storedProject && youthProjectOptions.includes(storedProject)) setSelectedYouthProjectName(storedProject);
-    } catch {
-      // The select still works if browser storage is disabled.
+    if (!isAdmin) return;
+    fetch('/api/admin/projects', { cache: 'no-store' })
+      .then(async (response) => {
+        const data = (await response.json()) as { projects?: Array<{ displayName: string }> };
+        if (response.ok) {
+          setAdminProjectOptions((data.projects ?? []).map((project) => project.displayName));
+        }
+      })
+      .catch(() => {
+        // Admin form can still submit without the dropdown.
+      });
+  }, [isAdmin]);
+
+  useEffect(() => {
+    if (account?.role === 'partner') {
+      setSelectedYouthProjectName(account.displayName);
     }
-  }, []);
+  }, [account]);
 
   const isActivityCalendar = workspaceView === 'activity-calendar';
   const activeCalendarMonth = isActivityCalendar ? activityVisibleMonth : visibleMonth;
@@ -244,20 +253,83 @@ export default function PortalSections() {
     [activities, sheetMonth],
   );
 
+  function handleYouthProjectChange(value: string) {
+    setSelectedYouthProjectName(value);
+  }
+
+  function resetImageUpload() {
+    setUploadedImageUrl('');
+    setImagePreviewUrl('');
+    setUploadStatus({ type: 'idle' });
+  }
+
+  async function handleImageFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setUploadStatus({ type: 'error', message: '請選擇圖片檔案。' });
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setUploadStatus({ type: 'error', message: '圖片大小不可超過 5 MB。' });
+      return;
+    }
+
+    setUseExternalImageUrl(false);
+    setUploadStatus({ type: 'uploading' });
+    setImagePreviewUrl(URL.createObjectURL(file));
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const response = await fetch('/api/uploads', { method: 'POST', body: formData });
+      const data = (await response.json()) as { url?: string; message?: string };
+      if (!response.ok || !data.url) throw new Error(data.message || '圖片上傳失敗。');
+
+      setUploadedImageUrl(data.url);
+      setUploadStatus({ type: 'success', message: '圖片已上傳。' });
+    } catch (error) {
+      setUploadedImageUrl('');
+      setUploadStatus({
+        type: 'error',
+        message: error instanceof Error ? error.message : '圖片上傳失敗。',
+      });
+    }
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setFormStatus({ type: 'sending' });
     const form = event.currentTarget;
     const formData = new FormData(form);
+    const externalImageUrl = String(formData.get('externalImageUrl') ?? '').trim();
+    const imageUrl = useExternalImageUrl ? externalImageUrl : uploadedImageUrl;
+
+    if (!imageUrl) {
+      setFormStatus({
+        type: 'error',
+        message: useExternalImageUrl ? '請貼上圖檔連結。' : '請先上傳圖片，或改用外部連結。',
+      });
+      return;
+    }
+    if (uploadStatus.type === 'uploading') {
+      setFormStatus({ type: 'error', message: '圖片仍在上傳中，請稍候。' });
+      return;
+    }
+
     const payload = {
       sessionNumber: String(formData.get('sessionNumber') ?? ''),
-      youthProjectName: String(formData.get('youthProjectName') ?? ''),
+      youthProjectName: account?.role === 'partner'
+        ? account.displayName
+        : String(formData.get('youthProjectName') ?? ''),
       activityDate: String(formData.get('activityDate') ?? ''),
       publishDate: String(formData.get('publishDate') ?? ''),
       promotionCopy: String(formData.get('promotionCopy') ?? ''),
-      imageUrl: String(formData.get('imageUrl') ?? ''),
+      imageUrl,
       needsDesign: formData.get('needsDesign') === 'true',
-      registrationUrl: String(formData.get('registrationUrl') ?? ''),
       notes: String(formData.get('notes') ?? ''),
     };
 
@@ -267,7 +339,7 @@ export default function PortalSections() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      const data = (await response.json()) as { activity?: Activity; message?: string };
+      const data = (await response.json()) as { activity?: Activity; publicUrl?: string; message?: string };
       if (!response.ok || !data.activity) throw new Error(data.message || '資料送出失敗。');
 
       setActivities((current) => [...current, data.activity!].sort((a, b) => a.publishDate.localeCompare(b.publishDate)));
@@ -277,21 +349,21 @@ export default function PortalSections() {
       setActivityVisibleMonth(activityMonth);
       setSheetMonth(publishMonth);
       setSelectedActivity(data.activity);
-      setFormStatus({ type: 'success', message: '活動已送出，並自動加入上刊月曆與活動月曆。' });
+      setHighlightActivityId(data.activity.id);
+      setHubRefreshKey((current) => current + 1);
+      setFormStatus({
+        type: 'success',
+        message: `活動已送出。報名連結：${data.publicUrl ?? buildPublicActivityPath(data.activity.slug)}（活動公開後，居民即可在 /活動 看見並報名）`,
+      });
       form.reset();
+      resetImageUpload();
+      setUseExternalImageUrl(false);
     } catch (error) {
       setFormStatus({ type: 'error', message: error instanceof Error ? error.message : '資料送出失敗。' });
     }
   }
 
-  function handleYouthProjectChange(value: string) {
-    setSelectedYouthProjectName(value);
-    try {
-      window.localStorage.setItem(youthProjectStorageKey, value);
-    } catch {
-      // Keep the current selection even when browser storage is unavailable.
-    }
-  }
+  const lockedProjectName = account?.role === 'partner' ? account.displayName : selectedYouthProjectName;
 
   function moveMonth(offset: number) {
     const setMonth = isActivityCalendar ? setActivityVisibleMonth : setVisibleMonth;
@@ -421,7 +493,7 @@ export default function PortalSections() {
       activity.designStatus,
       activity.publicationStatus,
       activity.assignee,
-      activity.registrationUrl,
+      activity.slug ? buildPublicActivityPath(activity.slug) : '',
       activity.notes,
       formatCreatedAt(activity.createdAt),
     ]);
@@ -492,22 +564,77 @@ export default function PortalSections() {
         <div className="form-intro">
           <div className="section-kicker light"><span>02</span> 內部活動表單</div>
           <h2 id="form-title">填寫活動資訊</h2>
-          <p>表單送出後，資料會即時收錄至平台組工作區，並分別依「上刊日期」與「活動日期」顯示在月曆。</p>
-          <div className="form-tip"><span aria-hidden="true">i</span><p><strong>送出前提醒</strong>圖檔請先上傳至共用資料夾，再貼上可存取的連結。</p></div>
+          <p>表單送出後，系統會自動建立報名連結，並同步顯示在活動資料區與工作區月曆。</p>
+          <div className="form-tip"><span aria-hidden="true">i</span><p><strong>送出前提醒</strong>可直接上傳圖片（JPG、PNG、WebP、GIF，上限 5 MB），或改用外部連結。</p></div>
         </div>
 
         <form className="activity-form" onSubmit={handleSubmit}>
-          <div className="form-progress"><span>ACTIVITY BRIEF</span><span>01 — 09</span></div>
+          <div className="form-progress"><span>ACTIVITY BRIEF</span><span>01 — 08</span></div>
           <div className="form-grid">
             <label className="field"><span className="field-label-with-link"><span>場次編號 <b>*</b></span><a href="https://docs.google.com/spreadsheets/d/1WuoUipLJK6iEVdCIeOcmdCcbQu_74j7tvu2yD0Xqoso/edit?gid=359503767#gid=359503767" target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>第一年核定總表 ↗</a></span><input name="sessionNumber" required maxLength={80} placeholder="例：NJ001A" /></label>
-            <label className="field"><span>青創名稱 <b>*</b></span><select name="youthProjectName" required value={selectedYouthProjectName} onChange={(event) => handleYouthProjectChange(event.target.value)}><option value="" disabled>請選擇青創計畫</option>{youthProjectOptions.map((project) => <option value={project} key={project}>{project}</option>)}</select></label>
+            <label className="field">
+              <span>青創名稱 <b>*</b></span>
+              {account?.role === 'partner' ? (
+                <>
+                  <input value={lockedProjectName} readOnly aria-readonly="true" />
+                  <input type="hidden" name="youthProjectName" value={lockedProjectName} />
+                </>
+              ) : (
+                <select
+                  name="youthProjectName"
+                  required
+                  value={selectedYouthProjectName}
+                  onChange={(event) => handleYouthProjectChange(event.target.value)}
+                >
+                  <option value="" disabled>請選擇青創計畫</option>
+                  {adminProjectOptions.map((project) => (
+                    <option value={project} key={project}>{project}</option>
+                  ))}
+                </select>
+              )}
+            </label>
             <label className="field"><span>活動日期 <b>*</b></span><input type="date" name="activityDate" required /></label>
             <label className="field"><span>上刊日期 <b>*</b></span><input type="date" name="publishDate" required /></label>
             <label className="field full"><span>宣傳文案 <b>*</b></span><textarea name="promotionCopy" required maxLength={5000} rows={6} placeholder="請貼上完整宣傳訊息，包含活動主題、時間、地點與參與方式…" /></label>
-            <label className="field full"><span>圖檔連結 <b>*</b></span><div className="input-with-link"><input type="url" name="imageUrl" required maxLength={1000} placeholder="https://" /><a href="https://reurl.cc/WzadZe" target="_blank" rel="noreferrer">開啟上傳資料夾 ↗</a></div></label>
+            <div className="field full image-upload-field">
+              <span>活動圖檔 <b>*</b></span>
+              {!useExternalImageUrl ? (
+                <>
+                  <div className="file-upload-row">
+                    <label className="file-upload-button">
+                      {uploadStatus.type === 'uploading' ? '上傳中…' : '選擇圖片'}
+                      <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={handleImageFileChange} disabled={uploadStatus.type === 'uploading'} />
+                    </label>
+                    {uploadedImageUrl && uploadStatus.type === 'success' && (
+                      <button className="file-upload-clear" type="button" onClick={resetImageUpload}>清除</button>
+                    )}
+                  </div>
+                  {uploadStatus.type !== 'idle' && uploadStatus.message && (
+                    <p className={`file-upload-status ${uploadStatus.type}`}>{uploadStatus.message}</p>
+                  )}
+                  {imagePreviewUrl && (
+                    <img className="file-upload-preview" src={imagePreviewUrl} alt="已選擇的圖片預覽" />
+                  )}
+                </>
+              ) : (
+                <div className="input-with-link">
+                  <input type="url" name="externalImageUrl" maxLength={1000} placeholder="https://" />
+                  <a href="https://reurl.cc/WzadZe" target="_blank" rel="noreferrer">開啟上傳資料夾 ↗</a>
+                </div>
+              )}
+              <button
+                className="image-source-toggle"
+                type="button"
+                onClick={() => {
+                  setUseExternalImageUrl((current) => !current);
+                  resetImageUpload();
+                }}
+              >
+                {useExternalImageUrl ? '改為直接上傳圖片' : '改用外部連結'}
+              </button>
+            </div>
             <fieldset className="field full radio-field"><legend>是否需要協助設計圖檔 <b>*</b></legend><div className="radio-options"><label><input type="radio" name="needsDesign" value="true" required /><span>是，需要協助</span></label><label><input type="radio" name="needsDesign" value="false" required /><span>否，已備妥圖檔</span></label></div></fieldset>
-            <label className="field"><span>報名連結 <em>選填</em></span><input type="url" name="registrationUrl" maxLength={1000} placeholder="Google 表單或其他報名頁面" /></label>
-            <label className="field"><span>其他備註 <em>選填</em></span><input name="notes" maxLength={3000} placeholder="其他希望平台組注意的訊息" /></label>
+            <label className="field full"><span>其他備註 <em>選填</em></span><input name="notes" maxLength={3000} placeholder="其他希望平台組注意的訊息" /></label>
           </div>
 
           {formStatus.type !== 'idle' && formStatus.type !== 'sending' && (
@@ -522,8 +649,16 @@ export default function PortalSections() {
         </form>
       </section>
 
+      <ActivityHub
+        account={account}
+        isAdmin={isAdmin}
+        highlightActivityId={highlightActivityId}
+        refreshToken={hubRefreshKey}
+      />
+
+      {account && (
       <section className="workspace-section" id="workspace" aria-labelledby="workspace-title">
-        <div className="section-kicker"><span>03</span> 平台組工作區</div>
+        <div className="section-kicker"><span>04</span> 工作區</div>
         <div className="workspace-heading">
           <div><h2 id="workspace-title">月曆與明細，<br />全部放在同一個工作區。</h2><p>分別用上刊月曆與活動月曆掌握排程，或切換到資料表逐條檢視伙伴送出的完整內容。</p></div>
           <div className="workspace-stat"><strong>{workspaceView === 'sheet' ? sheetMonthActivities.length : monthActivities.length}</strong><span>{workspaceView === 'sheet' ? <>{sheetMonth.getMonth() + 1} 月<br />提交筆數</> : isActivityCalendar ? <>{activeCalendarMonth.getMonth() + 1} 月<br />活動場次</> : <>{activeCalendarMonth.getMonth() + 1} 月<br />待上刊場次</>}</span></div>
@@ -535,7 +670,7 @@ export default function PortalSections() {
             <button type="button" role="tab" aria-selected={workspaceView === 'activity-calendar'} aria-controls="calendar-panel" className={workspaceView === 'activity-calendar' ? 'active' : ''} onClick={() => showCalendar('activity-calendar')}><span aria-hidden="true">▦</span> 活動月曆</button>
             <button type="button" role="tab" aria-selected={workspaceView === 'sheet'} aria-controls="sheet-panel" className={workspaceView === 'sheet' ? 'active' : ''} onClick={() => setWorkspaceView('sheet')}><span aria-hidden="true">≣</span> 活動資料表</button>
           </div>
-          {workspaceView === 'sheet' && <button className="csv-button" type="button" onClick={exportActivitiesCsv} disabled={!sheetMonthActivities.length}><span aria-hidden="true">↓</span> 輸出本月 CSV</button>}
+          {isAdmin && workspaceView === 'sheet' && <button className="csv-button" type="button" onClick={exportActivitiesCsv} disabled={!sheetMonthActivities.length}><span aria-hidden="true">↓</span> 輸出本月 CSV</button>}
         </div>
 
         {loadError && <div className="calendar-error workspace-error" role="alert">{loadError}</div>}
@@ -579,7 +714,7 @@ export default function PortalSections() {
                   <div className="detail-date"><span>{isActivityCalendar ? '活動' : '上刊'}</span><strong>{formatDate(selectedActivity[activeCalendarDateField])}</strong></div>
                   <div className="detail-main"><span>{selectedActivity.sessionNumber}</span><h4>{selectedActivity.youthProjectName}</h4><p>{selectedActivity.promotionCopy}</p></div>
                   <div className="detail-meta"><span>{isActivityCalendar ? '上刊日期' : '活動日期'} <b>{formatDate(isActivityCalendar ? selectedActivity.publishDate : selectedActivity.activityDate)}</b></span><span>圖檔設計 <b>{selectedActivity.needsDesign ? '需協助' : '已備妥'}</b></span></div>
-                  <div className="detail-links"><a href={selectedActivity.imageUrl} target="_blank" rel="noreferrer">圖檔 ↗</a>{selectedActivity.registrationUrl && <a href={selectedActivity.registrationUrl} target="_blank" rel="noreferrer">報名頁 ↗</a>}</div>
+                  <div className="detail-links"><a href={selectedActivity.imageUrl} target="_blank" rel="noreferrer">圖檔 ↗</a>{selectedActivity.slug && <a href={buildPublicActivityPath(selectedActivity.slug)} target="_blank" rel="noreferrer">報名頁 ↗</a>}</div>
                 </>
               ) : (
                 <div className="empty-detail">
@@ -620,13 +755,30 @@ export default function PortalSections() {
                         <td className="sheet-long" title={activity.promotionCopy}>{activity.promotionCopy}</td>
                         <td><a href={activity.imageUrl} target="_blank" rel="noreferrer">開啟圖檔 ↗</a></td>
                         <td>{activity.needsDesign ? '是' : '否'}</td>
-                        <td className="sheet-edit-cell"><select aria-label={`${activity.sessionNumber} 設計圖稿接案`} value={draft.designStatus} onChange={(event) => updateTrackingDraft(activity, 'designStatus', event.target.value as DesignStatus)}>{designStatusOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></td>
-                        <td className="sheet-edit-cell"><select aria-label={`${activity.sessionNumber} 發布狀態`} value={draft.publicationStatus} onChange={(event) => updateTrackingDraft(activity, 'publicationStatus', event.target.value as PublicationStatus)}>{publicationStatusOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></td>
-                        <td className="sheet-edit-cell"><input aria-label={`${activity.sessionNumber} 人員`} value={draft.assignee} maxLength={120} placeholder="輸入人員" onChange={(event) => updateTrackingDraft(activity, 'assignee', event.target.value)} /></td>
-                        <td>{activity.registrationUrl ? <a href={activity.registrationUrl} target="_blank" rel="noreferrer">開啟報名頁 ↗</a> : '—'}</td>
+                        <td className="sheet-edit-cell">
+                          {isAdmin ? (
+                            <select aria-label={`${activity.sessionNumber} 設計圖稿接案`} value={draft.designStatus} onChange={(event) => updateTrackingDraft(activity, 'designStatus', event.target.value as DesignStatus)}>{designStatusOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select>
+                          ) : activity.designStatus}
+                        </td>
+                        <td className="sheet-edit-cell">
+                          {isAdmin ? (
+                            <select aria-label={`${activity.sessionNumber} 發布狀態`} value={draft.publicationStatus} onChange={(event) => updateTrackingDraft(activity, 'publicationStatus', event.target.value as PublicationStatus)}>{publicationStatusOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select>
+                          ) : activity.publicationStatus}
+                        </td>
+                        <td className="sheet-edit-cell">
+                          {isAdmin ? (
+                            <input aria-label={`${activity.sessionNumber} 人員`} value={draft.assignee} maxLength={120} placeholder="輸入人員" onChange={(event) => updateTrackingDraft(activity, 'assignee', event.target.value)} />
+                          ) : (activity.assignee || '—')}
+                        </td>
+                        <td>{activity.slug ? <a href={buildPublicActivityPath(activity.slug)} target="_blank" rel="noreferrer">公開報名頁 ↗</a> : '—'}</td>
                         <td className="sheet-long" title={activity.notes ?? ''}>{activity.notes || '—'}</td>
                         <td>{formatCreatedAt(activity.createdAt)}</td>
-                        <td className="sheet-actions-cell"><div className="row-actions"><button className={`row-save ${saveStatus ?? ''}`} type="button" disabled={!hasChanges || saveStatus === 'saving'} onClick={() => saveActivityTracking(activity, draft)}>{saveStatus === 'saving' ? '儲存中…' : saveStatus === 'saved' && !hasChanges ? '已儲存' : saveStatus === 'error' ? '重試儲存' : '儲存'}</button><button className="row-delete" type="button" onClick={() => requestActivityDeletion(activity)}>刪除</button></div>{rowErrors[activity.id] && <small className="row-error" title={rowErrors[activity.id]}>{rowErrors[activity.id]}</small>}</td>
+                        <td className="sheet-actions-cell">
+                          {isAdmin ? (
+                            <div className="row-actions"><button className={`row-save ${saveStatus ?? ''}`} type="button" disabled={!hasChanges || saveStatus === 'saving'} onClick={() => saveActivityTracking(activity, draft)}>{saveStatus === 'saving' ? '儲存中…' : saveStatus === 'saved' && !hasChanges ? '已儲存' : saveStatus === 'error' ? '重試儲存' : '儲存'}</button><button className="row-delete" type="button" onClick={() => requestActivityDeletion(activity)}>刪除</button></div>
+                          ) : '—'}
+                          {rowErrors[activity.id] && <small className="row-error" title={rowErrors[activity.id]}>{rowErrors[activity.id]}</small>}
+                        </td>
                       </tr>
                     );
                   }) : (
@@ -635,10 +787,11 @@ export default function PortalSections() {
                 </tbody>
               </table>
             </div>
-            <div className="sheet-footer"><span>修改工作狀態或人員後，請點選該列的「儲存」。</span><span>資料依上刊日期按月顯示</span></div>
+            <div className="sheet-footer"><span>{isAdmin ? '修改工作狀態或人員後，請點選該列的「儲存」。' : '此資料表供所有青創瀏覽排程與美編進度。'}</span><span>資料依上刊日期按月顯示</span></div>
           </div>
         )}
       </section>
+      )}
 
       {activityPendingDelete && (
         <div className="confirm-backdrop">

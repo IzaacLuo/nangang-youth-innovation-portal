@@ -2,11 +2,14 @@ import {
   createActivity,
   deleteActivity,
   listActivities,
+  listActivitiesByAccount,
   updateActivityTracking,
   type ActivitySubmissionInput,
   type DesignStatus,
   type PublicationStatus,
-} from '../../../db/activities';
+} from '@/db/activities';
+import { buildPublicActivityPath } from '@/lib/slug';
+import { requireAdmin, requireAuth } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,9 +42,24 @@ function isHttpUrl(value: string) {
   }
 }
 
-export async function GET() {
+function isValidImageUrl(value: string) {
+  if (value.startsWith('/api/files/')) return true;
+  return isHttpUrl(value);
+}
+
+export async function GET(request: Request) {
+  const auth = await requireAuth(request);
+  if ('error' in auth) return auth.error;
+
   try {
-    return Response.json({ activities: await listActivities() });
+    const scope = new URL(request.url).searchParams.get('scope');
+    const activities = scope === 'mine'
+      ? auth.context.account.role === 'admin'
+        ? await listActivities()
+        : await listActivitiesByAccount(auth.context.account.code)
+      : await listActivities();
+
+    return Response.json({ activities });
   } catch (error) {
     console.error('Unable to list activities', error);
     return Response.json({ message: '目前無法讀取活動資料，請稍後再試。' }, { status: 500 });
@@ -49,6 +67,13 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const auth = await requireAuth(request);
+  if ('error' in auth) return auth.error;
+
+  if (auth.context.account.mustChangePassword) {
+    return Response.json({ message: '請先完成密碼變更後再提交活動。' }, { status: 403 });
+  }
+
   try {
     const contentLength = Number(request.headers.get('content-length') ?? 0);
     if (contentLength > 100_000) {
@@ -58,13 +83,14 @@ export async function POST(request: Request) {
     const body = (await request.json()) as Record<string, unknown>;
     const data: ActivitySubmissionInput = {
       sessionNumber: cleanText(body.sessionNumber, 80),
-      youthProjectName: cleanText(body.youthProjectName, 120),
+      youthProjectName: auth.context.account.role === 'admin'
+        ? cleanText(body.youthProjectName, 120)
+        : auth.context.account.displayName,
       activityDate: cleanText(body.activityDate, 10),
       publishDate: cleanText(body.publishDate, 10),
       promotionCopy: cleanText(body.promotionCopy, 5000),
       imageUrl: cleanText(body.imageUrl, 1000),
       needsDesign: body.needsDesign === true,
-      registrationUrl: cleanText(body.registrationUrl, 1000) || null,
       notes: cleanText(body.notes, 3000) || null,
     };
 
@@ -75,11 +101,15 @@ export async function POST(request: Request) {
     if (!isIsoDate(data.activityDate) || !isIsoDate(data.publishDate)) {
       return Response.json({ message: '請填寫有效的日期。' }, { status: 400 });
     }
-    if (!isHttpUrl(data.imageUrl) || (data.registrationUrl && !isHttpUrl(data.registrationUrl))) {
-      return Response.json({ message: '連結格式不正確，請使用 http 或 https 連結。' }, { status: 400 });
+    if (!isValidImageUrl(data.imageUrl)) {
+      return Response.json({ message: '連結格式不正確，請上傳圖片或提供 http / https 連結。' }, { status: 400 });
     }
 
-    return Response.json({ activity: await createActivity(data) }, { status: 201 });
+    const activity = await createActivity(data, auth.context.account.code);
+    return Response.json({
+      activity,
+      publicUrl: buildPublicActivityPath(activity.slug),
+    }, { status: 201 });
   } catch (error) {
     console.error('Unable to create activity', error);
     return Response.json({ message: '資料送出失敗，請稍後再試。' }, { status: 500 });
@@ -87,6 +117,9 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  const auth = await requireAdmin(request);
+  if ('error' in auth) return auth.error;
+
   try {
     const body = (await request.json()) as Record<string, unknown>;
     const id = Number(body.id);
@@ -111,6 +144,9 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const auth = await requireAdmin(request);
+  if ('error' in auth) return auth.error;
+
   try {
     const id = Number(new URL(request.url).searchParams.get('id'));
     if (!Number.isInteger(id) || id <= 0) {

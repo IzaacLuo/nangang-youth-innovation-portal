@@ -1,4 +1,10 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+
+import SiteHeader from './components/SiteHeader';
 import PortalSections, { CurrentDateCard } from './components/PortalSections';
+import { fetchCurrentAccount, type PublicAccount } from './lib/client-auth';
 
 const modules = [
   {
@@ -11,43 +17,42 @@ const modules = [
   {
     number: '02',
     title: '內部活動表單',
-    description: '提交活動資訊、宣傳文案與圖檔需求，一次完成上刊登記。',
+    description: '提交活動資訊、宣傳文案與圖檔需求，建立後自動產生報名連結。',
     href: '#activity-form',
     action: '填寫表單',
   },
   {
     number: '03',
-    title: '平台組工作區',
-    description: '集中查看伙伴提交的活動，依上刊日期與活動日期掌握月曆排程。',
+    title: '活動資料區',
+    description: '查看我的活動、複製公開報名連結，並管理報名名單。',
+    href: '#activity-hub',
+    action: '查看活動',
+  },
+  {
+    number: '04',
+    title: '工作區',
+    description: '瀏覽上刊月曆、活動月曆與完整資料表，掌握美編與排程進度。',
     href: '#workspace',
     action: '開啟工作區',
   },
 ];
 
-export default function Home() {
+export default function HomePage() {
+  const [account, setAccount] = useState<PublicAccount | null>(null);
+
+  useEffect(() => {
+    fetchCurrentAccount().then(setAccount).catch(() => setAccount(null));
+  }, []);
+
   return (
     <main>
-      <header className="site-header">
-        <a className="brand" href="#top" aria-label="回到首頁">
-          <span className="brand-mark" aria-hidden="true">NG</span>
-          <span>
-            <strong>南港機廠社宅</strong>
-            <small>青創入口網</small>
-          </span>
-        </a>
-        <nav aria-label="主要導覽">
-          <a href="#resources">資料彙整</a>
-          <a href="#activity-form">活動填報</a>
-          <a href="#workspace">工作區</a>
-        </nav>
-        <a className="header-cta" href="#activity-form">提交活動 <span aria-hidden="true">↗</span></a>
-      </header>
+      <SiteHeader />
 
       <section className="hero" id="top">
         <div className="hero-copy">
           <div className="eyebrow"><span /> 南港青創伙伴協作平台</div>
           <h1>讓好點子，<br />在社區裡<span>發生</span>。</h1>
-          <p>台北市南港機廠社宅青年創新回饋計畫入口網，整合資料、活動填報與上刊排程，讓每一份回饋都更順利抵達社區。</p>
+          <p>台北市南港機廠社宅青年創新回饋計畫入口網，整合資料、活動填報、報名管理與上刊排程，讓每一份回饋都更順利抵達社區。</p>
           <div className="hero-actions">
             <a className="primary-button" href="#activity-form">開始填報 <span aria-hidden="true">→</span></a>
             <a className="text-button" href="#resources">先看資料懶人包</a>
@@ -60,9 +65,9 @@ export default function Home() {
           <div className="panel-copy">
             <span className="kicker">活動上刊提醒</span>
             <h2>提早完成填報，<br />讓宣傳不趕場。</h2>
-            <p>建議於活動日期前 14 天送出資料，圖檔設計需求也請一併勾選。</p>
+            <p>建議於活動日期前 14 天送出資料，圖檔設計需求也請一併勾選。居民可在公開入口 <a href="/活動" target="_blank" rel="noreferrer">/活動</a> 瀏覽已公開場次。</p>
           </div>
-          <div className="panel-footer"><span>快速入口</span><a href="#workspace">查看上刊月曆 ↗</a></div>
+          <div className="panel-footer"><span>快速入口</span><a href="#activity-hub">查看我的活動 ↗</a></div>
         </div>
       </section>
 
@@ -71,11 +76,11 @@ export default function Home() {
           <div><span className="eyebrow"><span /> 入口導覽</span><h2 id="module-title">你現在需要做什麼？</h2></div>
           <p>從找資料、送活動，到掌握排程，從這裡開始。</p>
         </div>
-        <div className="module-grid">
+        <div className={`module-grid module-grid-${modules.length}`}>
           {modules.map((module) => (
             <a className="module-card" href={module.href} key={module.number}>
               <span className="module-number">{module.number}</span>
-              <div className="module-icon" aria-hidden="true">{module.number === '01' ? '≣' : module.number === '02' ? '✐' : '▦'}</div>
+              <div className="module-icon" aria-hidden="true">{module.number === '01' ? '≣' : module.number === '02' ? '✐' : module.number === '03' ? '◎' : '▦'}</div>
               <h3>{module.title}</h3>
               <p>{module.description}</p>
               <span className="module-link">{module.action} <span aria-hidden="true">→</span></span>
@@ -84,7 +89,7 @@ export default function Home() {
         </div>
       </section>
 
-      <PortalSections />
+      <PortalSections isAdmin={account?.role === 'admin'} account={account} />
     </main>
   );
 }
